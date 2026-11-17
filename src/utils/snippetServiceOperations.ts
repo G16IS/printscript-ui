@@ -109,20 +109,24 @@ export class SnippetServiceOperations implements SnippetOperations {
     return notAvailable('Format snippet')
   }
 
-  getFormatRules(): Promise<Rule[]> {
-    return notAvailable('Format rules')
+  async getFormatRules(): Promise<Rule[]> {
+    const {data} = await this.http.get<Rule[]>('/rules/format')
+    return data
   }
 
-  getLintingRules(): Promise<Rule[]> {
-    return notAvailable('Linting rules')
+  async getLintingRules(): Promise<Rule[]> {
+    const {data} = await this.http.get<Rule[]>('/rules/lint')
+    return data
   }
 
-  modifyFormatRule(): Promise<Rule[]> {
-    return notAvailable('Modify format rules')
+  async modifyFormatRule(newRules: Rule[]): Promise<Rule[]> {
+    const {data} = await this.http.put<Rule[]>('/rules/format', newRules)
+    return data
   }
 
-  modifyLintingRule(): Promise<Rule[]> {
-    return notAvailable('Modify linting rules')
+  async modifyLintingRule(newRules: Rule[]): Promise<Rule[]> {
+    const {data} = await this.http.put<Rule[]>('/rules/lint', newRules)
+    return data
   }
 
   async getTestCases(snippetId: string): Promise<TestCase[]> {
