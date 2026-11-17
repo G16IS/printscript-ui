@@ -1,37 +1,14 @@
-import {AUTH0_USERNAME,AUTH0_PASSWORD} from "../../src/utils/constants";
+describe('Protected routes', () => {
+  it('redirects to the Auth0 login when not authenticated', () => {
+    cy.visit('/')
+    cy.location('hostname', {timeout: 10000}).should('equal', Cypress.expose('AUTH0_DOMAIN'))
+  })
 
-describe('Protected routes test', () => {
-  it('should redirect to login when accessing a protected route unauthenticated', () => {
-    // Visit the protected route
-    cy.visit('/');
-
-    cy.wait(1000)
-
-    // Check if the URL is redirected to the login page
-    cy.url().should('include', '/login');
-  });
-
-  it('should display login content', () => {
-    // Visit the login page
-    cy.visit('/login');
-
-    // Look for text that is likely to appear on a login page
-    cy.contains('Log in').should('exist');
-    cy.contains('Password').should('exist'); // Adjust the text based on actual content
-  });
-
-  it('should not redirect to login when the user is already authenticated', () => {
-    cy.loginToAuth0(
-        AUTH0_USERNAME,
-        AUTH0_PASSWORD
-    )
-
-    cy.visit('/');
-
-    cy.wait(1000)
-
-    // Check if the URL is redirected to the login page
-    cy.url().should('not.include', '/login');
-  });
-
+  it('shows the app once logged in', () => {
+    cy.env(['AUTH0_USERNAME', 'AUTH0_PASSWORD']).then(({AUTH0_USERNAME, AUTH0_PASSWORD}) =>
+        cy.loginToAuth0(AUTH0_USERNAME, AUTH0_PASSWORD))
+    cy.visit('/')
+    cy.location('origin').should('equal', Cypress.config('baseUrl'))
+    cy.contains('Printscript').should('be.visible')
+  })
 })

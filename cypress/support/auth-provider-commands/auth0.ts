@@ -1,24 +1,17 @@
-
-
+// Logs in through the Auth0 Universal Login page and waits until it redirects back to the app.
 export function loginViaAuth0Ui(username: string, password: string) {
-  // App landing page redirects to Auth0.
   cy.visit('/')
 
-  // Login on Auth0.
   cy.origin(
-      Cypress.env('auth0_domain'),
-      { args: { username, password } },
-      ({ username, password }) => {
+      `https://${Cypress.expose('AUTH0_DOMAIN')}`,
+      {args: {username, password}},
+      ({username, password}) => {
         cy.get('input#username').type(username)
-        cy.get('input#password').type(password, { log: false })
-        cy.contains('button[value=default]', 'Continue').click()
+        cy.get('input#password').type(password, {log: false})
+        cy.get('button[type=submit][name=action]').filter(':visible').first().click()
       }
   )
 
-  // Ensure Auth0 has redirected us back to the RWA.
-  cy.url().should('equal', 'http://localhost:3000/')
+  cy.location('origin').should('equal', Cypress.config('baseUrl'))
+  cy.contains('Printscript').should('be.visible')
 }
-
-
-
-
