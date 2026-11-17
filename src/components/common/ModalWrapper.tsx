@@ -15,6 +15,9 @@ export const ModalWrapper = ({open, onClose,children}: { open: boolean, onClose:
           padding: '32px',
           borderRadius: '8px',
           width: '50%',
+          maxHeight: '90vh',
+          boxSizing: 'border-box',
+          overflowY: 'auto',
           display: 'flex',
           flexDirection: 'column',
           gap: '16px'

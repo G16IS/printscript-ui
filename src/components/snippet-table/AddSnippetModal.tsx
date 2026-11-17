@@ -1,4 +1,5 @@
 import {
+    Alert,
     Box,
     Button,
     capitalize,
@@ -22,6 +23,7 @@ import {CreateSnippet, CreateSnippetWithLang} from "../../utils/snippet.ts";
 import {ModalWrapper} from "../common/ModalWrapper.tsx";
 import {useCreateSnippet, useGetFileTypes} from "../../utils/queries.tsx";
 import {queryClient} from "../../App.tsx";
+import {snippetErrorMessage} from "../../utils/snippetError.ts";
 
 export const AddSnippetModal = ({open, onClose, defaultSnippet}: {
     open: boolean,
@@ -31,21 +33,24 @@ export const AddSnippetModal = ({open, onClose, defaultSnippet}: {
     const [language, setLanguage] = useState(defaultSnippet?.language ?? "printscript");
     const [code, setCode] = useState(defaultSnippet?.content ?? "");
     const [snippetName, setSnippetName] = useState(defaultSnippet?.name ?? "")
-    const {mutateAsync: createSnippet, isLoading: loadingSnippet} = useCreateSnippet({
+    const {mutate: createSnippet, isLoading: loadingSnippet, error, reset} = useCreateSnippet({
         onSuccess: () => queryClient.invalidateQueries('listSnippets')
     })
     const {data: fileTypes} = useGetFileTypes();
 
-    const handleCreateSnippet = async () => {
+    const handleCreateSnippet = () => {
         const newSnippet: CreateSnippet = {
             name: snippetName,
             content: code,
             language: language,
             extension: fileTypes?.find((f) => f.language === language)?.extension ?? "prs"
         }
-        await createSnippet(newSnippet);
-        onClose();
+        createSnippet(newSnippet, {onSuccess: onClose});
     }
+
+    useEffect(() => {
+        if (open) reset()
+    }, [open, reset]);
 
     useEffect(() => {
         if (defaultSnippet) {
@@ -73,6 +78,9 @@ export const AddSnippetModal = ({open, onClose, defaultSnippet}: {
                     </Button>
                 </Box>
             }
+            {error && <Alert severity="error" sx={{whiteSpace: 'pre-line'}}>
+                {`Could not save snippet.\n${snippetErrorMessage(error)}`}
+            </Alert>}
             <Box sx={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -128,4 +136,3 @@ export const AddSnippetModal = ({open, onClose, defaultSnippet}: {
         </ModalWrapper>
     )
 }
-
