@@ -19,6 +19,7 @@ import {SnippetExecution} from "./SnippetExecution.tsx";
 import ReadMoreIcon from '@mui/icons-material/ReadMore';
 import {queryClient} from "../App.tsx";
 import {DeleteConfirmationModal} from "../components/snippet-detail/DeleteConfirmationModal.tsx";
+import {snippetErrorMessage} from "../utils/snippetError.ts";
 
 type SnippetDetailProps = {
   id: string;
@@ -59,8 +60,13 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
 
   const {data: snippet, isLoading} = useGetSnippetById(id);
   const {mutate: shareSnippet, isLoading: loadingShare} = useShareSnippet()
-  const {mutate: formatSnippet, isLoading: isFormatLoading, isError: isFormatError, error: formatError} = useFormatSnippet()
-  const {mutate: updateSnippet, isLoading: isUpdateSnippetLoading} = useUpdateSnippetById({onSuccess: () => queryClient.invalidateQueries(['snippet', id])})
+  const {mutate: formatSnippet, isLoading: isFormatLoading, isError: isFormatError, error: formatError, reset: resetFormat} = useFormatSnippet()
+  const {mutate: updateSnippet, isLoading: isUpdateSnippetLoading, error: saveError, reset: resetSave} = useUpdateSnippetById({
+    onSuccess: () => {
+      resetFormat()
+      return queryClient.invalidateQueries(['snippet', id])
+    }
+  })
 
   useEffect(() => {
     if (snippet) {
@@ -104,6 +110,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
               <Tooltip title={"Format"}>
                 <IconButton disabled={isFormatLoading} onClick={() => formatSnippet({snippetId: id, content: code}, {
                   onSuccess: (formatted) => {
+                    resetSave()
                     setCode(formatted)
                     queryClient.invalidateQueries(['snippet', id])
                     queryClient.invalidateQueries('listSnippets')
@@ -123,7 +130,10 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
                 </IconButton>
               </Tooltip>
             </Box>
-            {isFormatError && <Alert severity="error">{formatError?.message}</Alert>}
+            {saveError && <Alert severity="error" sx={{whiteSpace: 'pre-line'}}>
+              {`Could not save snippet.\n${snippetErrorMessage(saveError)}`}
+            </Alert>}
+            {isFormatError && <Alert severity="error" sx={{whiteSpace: 'pre-line'}}>{snippetErrorMessage(formatError)}</Alert>}
             <Box display={"flex"} gap={2}>
               <Bòx flex={1} height={"fit-content"} overflow={"none"} minHeight={"500px"} bgcolor={'black'} color={'white'} code={code}>
                 <Editor
@@ -155,4 +165,3 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
       </Box>
   );
 }
-
