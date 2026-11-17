@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {TestCase} from "../../types/TestCase.ts";
 import {Autocomplete, Box, Button, Chip, TextField, Typography} from "@mui/material";
 import {BugReport, Delete, Save} from "@mui/icons-material";
@@ -7,15 +7,21 @@ import {useTestSnippet} from "../../utils/queries.tsx";
 type TabPanelProps = {
     index: number;
     value: number;
+    snippetId: string;
     test?: TestCase;
-    setTestCase: (test: Partial<TestCase>) => void;
+    setTestCase: (test: Partial<TestCase>) => Promise<TestCase | void>;
     removeTestCase?: (testIndex: string) => void;
 }
 
-export const TabPanel = ({value, index, test: initialTest, setTestCase, removeTestCase}: TabPanelProps) => {
+export const TabPanel = ({value, index, snippetId, test: initialTest, setTestCase, removeTestCase}: TabPanelProps) => {
     const [testData, setTestData] = useState<Partial<TestCase> | undefined>(initialTest);
 
-    const {mutateAsync: testSnippet, data} = useTestSnippet();
+    // an edit replaces the test with a new id, so follow the prop
+    useEffect(() => {
+        if (initialTest) setTestData(initialTest)
+    }, [initialTest])
+
+    const {mutateAsync: testSnippet, data} = useTestSnippet(snippetId);
 
 
     return (
@@ -85,7 +91,10 @@ export const TabPanel = ({value, index, test: initialTest, setTestCase, removeTe
                                 Remove
                             </Button>)
                         }
-                        <Button disabled={!testData?.name} onClick={() => setTestCase(testData ?? {})} variant={"outlined"} startIcon={<Save/>}>
+                        <Button disabled={!testData?.name} onClick={async () => {
+                            const saved = await setTestCase(testData ?? {})
+                            if (saved) setTestData(saved)
+                        }} variant={"outlined"} startIcon={<Save/>}>
                             Save
                         </Button>
                         <Button onClick={() => testSnippet(testData ?? {})} variant={"contained"} startIcon={<BugReport/>}

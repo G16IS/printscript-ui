@@ -1,7 +1,7 @@
 import axios, {AxiosInstance} from 'axios'
 import autoBind from 'auto-bind'
 import {SnippetOperations} from './snippetOperations'
-import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet} from './snippet'
+import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet'
 import {PaginatedUsers} from './users.ts'
 import {TestCase} from '../types/TestCase.ts'
 import {TestCaseResult} from './queries.tsx'
@@ -34,8 +34,24 @@ const toSnippet = (s: { id: string, name: string, language: string, lintStatus: 
   compliance: COMPLIANCE[s.lintStatus] ?? 'pending',
 })
 
-const notAvailable = (operation: string): Promise<never> =>
-  Promise.reject(new Error(`${operation}: snippet-service does not expose this endpoint yet`))
+type TestCaseResponse = { id: string, name: string, inputs: string[], expectedOutputs: string[] }
+
+const toTestCase = (t: TestCaseResponse): TestCase => ({id: t.id, name: t.name, input: t.inputs, output: t.expectedOutputs})
+
+type FormatStatusResponse = { status: 'NONE' | 'REQUESTED' | 'DONE' | 'FAILED' | 'ERROR', error: string | null }
+type TestResultResponse = { testId: string, status: 'RUNNING' | 'OK' | 'FAILED' | 'ERROR', outputs: string[], error: string | null }
+
+const TIMED_OUT = 'Timed out'
+
+// calls fn until it returns a defined value; fn throwing stops the polling at once
+const poll = async <T>(fn: () => Promise<T | undefined>, attempts = 15, delayMs = 1000): Promise<T> => {
+  for (let i = 0; i < attempts; i++) {
+    const value = await fn()
+    if (value !== undefined) return value
+    if (i < attempts - 1) await new Promise(resolve => setTimeout(resolve, delayMs))
+  }
+  throw new Error(TIMED_OUT)
+}
 
 export class SnippetServiceOperations implements SnippetOperations {
   private readonly http: AxiosInstance
@@ -91,47 +107,91 @@ export class SnippetServiceOperations implements SnippetOperations {
     return Promise.resolve(FILE_TYPES)
   }
 
-  updateSnippetById(): Promise<Snippet> {
-    return notAvailable('Update snippet')
+  async updateSnippetById(id: string, updateSnippet: UpdateSnippet): Promise<Snippet> {
+    const {data} = await this.http.put<SnippetDetailResponse>(`/snippets/${id}`, {content: updateSnippet.content})
+    return toSnippet(data, data.content)
   }
 
-  deleteSnippet(): Promise<string> {
-    return notAvailable('Delete snippet')
+  async deleteSnippet(id: string): Promise<string> {
+    await this.http.delete(`/snippets/${id}`)
+    return id
   }
 
-  formatSnippet(): Promise<string> {
-    return notAvailable('Format snippet')
+  async formatSnippet(snippetId: string, content: string): Promise<string> {
+    // the format job reads the saved content, so unsaved edits are saved first
+    if ((await this.getSnippetById(snippetId)).content !== content) {
+      await this.updateSnippetById(snippetId, {content})
+    }
+    await this.http.post(`/snippets/${snippetId}/format`)
+    await poll<true>(async () => {
+      const {data} = await this.http.get<FormatStatusResponse>(`/snippets/${snippetId}/format`)
+      if (data.status === 'DONE') return true
+      if (data.status === 'FAILED' || data.status === 'ERROR') throw new Error(data.error ?? 'Formatting failed')
+      return undefined
+    }).catch(e => {
+      throw e.message === TIMED_OUT ? new Error('Formatting is taking too long') : e
+    })
+    return (await this.getSnippetById(snippetId)).content
   }
 
-  getFormatRules(): Promise<Rule[]> {
-    return notAvailable('Format rules')
+  async getFormatRules(): Promise<Rule[]> {
+    const {data} = await this.http.get<Rule[]>('/rules/format')
+    return data
   }
 
-  getLintingRules(): Promise<Rule[]> {
-    return notAvailable('Linting rules')
+  async getLintingRules(): Promise<Rule[]> {
+    const {data} = await this.http.get<Rule[]>('/rules/lint')
+    return data
   }
 
-  modifyFormatRule(): Promise<Rule[]> {
-    return notAvailable('Modify format rules')
+  async modifyFormatRule(newRules: Rule[]): Promise<Rule[]> {
+    const {data} = await this.http.put<Rule[]>('/rules/format', newRules)
+    return data
   }
 
-  modifyLintingRule(): Promise<Rule[]> {
-    return notAvailable('Modify linting rules')
+  async modifyLintingRule(newRules: Rule[]): Promise<Rule[]> {
+    const {data} = await this.http.put<Rule[]>('/rules/lint', newRules)
+    return data
   }
 
-  getTestCases(): Promise<TestCase[]> {
-    return notAvailable('Test cases')
+  async getTestCases(snippetId: string): Promise<TestCase[]> {
+    const {data} = await this.http.get<TestCaseResponse[]>(`/snippets/${snippetId}/tests`)
+    return data.map(toTestCase)
   }
 
-  postTestCase(): Promise<TestCase> {
-    return notAvailable('Create test case')
+  async postTestCase(snippetId: string, testCase: Partial<TestCase>): Promise<TestCase> {
+    const {data} = await this.http.post<TestCaseResponse>(`/snippets/${snippetId}/tests`, {
+      name: testCase.name,
+      inputs: testCase.input ?? [],
+      expectedOutputs: testCase.output ?? [],
+    })
+    // the backend has no update: create the new test first, then drop the old one, so a failure never loses the test
+    if (testCase.id) {
+      await this.removeTestCase(snippetId, testCase.id)
+        .catch(e => console.warn(`Could not delete the replaced test ${testCase.id}, a duplicate remains`, e))
+    }
+    return toTestCase(data)
   }
 
-  removeTestCase(): Promise<string> {
-    return notAvailable('Remove test case')
+  async removeTestCase(snippetId: string, testId: string): Promise<string> {
+    await this.http.delete(`/snippets/${snippetId}/tests/${testId}`)
+    return testId
   }
 
-  testSnippet(): Promise<TestCaseResult> {
-    return notAvailable('Run test case')
+  async testSnippet(snippetId: string, testCase: Partial<TestCase>): Promise<TestCaseResult> {
+    const testId = testCase.id
+    if (!testId) throw new Error('Save the test before running it')
+    // the run covers all the snippet's tests, so the result is looked up by this test's id
+    const {status} = await this.http.post(`/snippets/${snippetId}/tests/run`)
+    if (status === 204) throw new Error('This snippet has no tests')
+    return poll<TestCaseResult>(async () => {
+      const {data} = await this.http.get<TestResultResponse[]>(`/snippets/${snippetId}/tests/results`)
+      const result = data.find(r => r.testId === testId)
+      if (!result || result.status === 'RUNNING') return undefined
+      if (result.status === 'ERROR') throw new Error(result.error ?? 'Test failed to run')
+      return result.status === 'OK' ? 'success' : 'fail'
+    }).catch(e => {
+      throw e.message === TIMED_OUT ? new Error('Test is taking too long') : e
+    })
   }
 }

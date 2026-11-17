@@ -1,4 +1,4 @@
-import {useMutation, UseMutationResult, useQuery} from 'react-query';
+import {useMutation, UseMutationResult, useQuery, useQueryClient} from 'react-query';
 import {CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet.ts';
 import {SnippetOperations} from "./snippetOperations.ts";
 import {PaginatedUsers} from "./users.ts";
@@ -65,28 +65,30 @@ export const useShareSnippet = () => {
 };
 
 
-export const useGetTestCases = () => {
+export const useGetTestCases = (snippetId: string) => {
   const snippetOperations = useSnippetsOperations()
 
-  return useQuery<TestCase[] | undefined, Error>(['testCases'], () => snippetOperations.getTestCases(), {});
+  return useQuery<TestCase[] | undefined, Error>(['testCases', snippetId], () => snippetOperations.getTestCases(snippetId), {});
 };
 
 
-export const usePostTestCase = () => {
+export const usePostTestCase = (snippetId: string) => {
   const snippetOperations = useSnippetsOperations()
+  const queryClient = useQueryClient()
 
   return useMutation<TestCase, Error, Partial<TestCase>>(
-      (tc) => snippetOperations.postTestCase(tc)
+      (tc) => snippetOperations.postTestCase(snippetId, tc),
+      {onSuccess: () => queryClient.invalidateQueries(['testCases', snippetId])}
   );
 };
 
 
-export const useRemoveTestCase = ({onSuccess}: {onSuccess: () => void}) => {
+export const useRemoveTestCase = (snippetId: string, {onSuccess}: {onSuccess: () => void}) => {
   const snippetOperations = useSnippetsOperations()
 
   return useMutation<string, Error, string>(
       ['removeTestCase'],
-      (id) => snippetOperations.removeTestCase(id),
+      (id) => snippetOperations.removeTestCase(snippetId, id),
       {
         onSuccess,
       }
@@ -95,11 +97,11 @@ export const useRemoveTestCase = ({onSuccess}: {onSuccess: () => void}) => {
 
 export type TestCaseResult = "success" | "fail"
 
-export const useTestSnippet = () => {
+export const useTestSnippet = (snippetId: string) => {
   const snippetOperations = useSnippetsOperations()
 
   return useMutation<TestCaseResult, Error, Partial<TestCase>>(
-      (tc) => snippetOperations.testSnippet(tc)
+      (tc) => snippetOperations.testSnippet(snippetId, tc)
   )
 }
 
@@ -140,8 +142,8 @@ export const useModifyLintingRules = ({onSuccess}: {onSuccess: () => void}) => {
 export const useFormatSnippet = () => {
   const snippetOperations = useSnippetsOperations()
 
-  return useMutation<string, Error, string>(
-      snippetContent => snippetOperations.formatSnippet(snippetContent)
+  return useMutation<string, Error, {snippetId: string; content: string}>(
+      ({snippetId, content}) => snippetOperations.formatSnippet(snippetId, content)
   );
 }
 
