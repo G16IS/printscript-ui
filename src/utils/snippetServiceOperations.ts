@@ -38,6 +38,21 @@ type TestCaseResponse = { id: string, name: string, inputs: string[], expectedOu
 
 const toTestCase = (t: TestCaseResponse): TestCase => ({id: t.id, name: t.name, input: t.inputs, output: t.expectedOutputs})
 
+type FormatStatusResponse = { status: 'NONE' | 'REQUESTED' | 'DONE' | 'FAILED' | 'ERROR', error: string | null }
+type TestResultResponse = { testId: string, status: 'RUNNING' | 'OK' | 'FAILED' | 'ERROR', outputs: string[], error: string | null }
+
+const TIMED_OUT = 'Timed out'
+
+// calls fn until it returns a defined value; fn throwing stops the polling at once
+const poll = async <T>(fn: () => Promise<T | undefined>, attempts = 15, delayMs = 1000): Promise<T> => {
+  for (let i = 0; i < attempts; i++) {
+    const value = await fn()
+    if (value !== undefined) return value
+    if (i < attempts - 1) await new Promise(resolve => setTimeout(resolve, delayMs))
+  }
+  throw new Error(TIMED_OUT)
+}
+
 export class SnippetServiceOperations implements SnippetOperations {
   private readonly http: AxiosInstance
 
@@ -102,9 +117,21 @@ export class SnippetServiceOperations implements SnippetOperations {
     return id
   }
 
-  async formatSnippet(content: string): Promise<string> {
-    const {data} = await this.http.post<{ content: string }>('/snippets/format', {content})
-    return data.content
+  async formatSnippet(snippetId: string, content: string): Promise<string> {
+    // the format job reads the saved content, so unsaved edits are saved first
+    if ((await this.getSnippetById(snippetId)).content !== content) {
+      await this.updateSnippetById(snippetId, {content})
+    }
+    await this.http.post(`/snippets/${snippetId}/format`)
+    await poll<true>(async () => {
+      const {data} = await this.http.get<FormatStatusResponse>(`/snippets/${snippetId}/format`)
+      if (data.status === 'DONE') return true
+      if (data.status === 'FAILED' || data.status === 'ERROR') throw new Error(data.error ?? 'Formatting failed')
+      return undefined
+    }).catch(e => {
+      throw e.message === TIMED_OUT ? new Error('Formatting is taking too long') : e
+    })
+    return (await this.getSnippetById(snippetId)).content
   }
 
   async getFormatRules(): Promise<Rule[]> {
@@ -152,8 +179,19 @@ export class SnippetServiceOperations implements SnippetOperations {
   }
 
   async testSnippet(snippetId: string, testCase: Partial<TestCase>): Promise<TestCaseResult> {
-    if (!testCase.id) throw new Error('Save the test before running it')
-    const {data} = await this.http.post<{ result: TestCaseResult }>(`/snippets/${snippetId}/tests/${testCase.id}/run`)
-    return data.result
+    const testId = testCase.id
+    if (!testId) throw new Error('Save the test before running it')
+    // the run covers all the snippet's tests, so the result is looked up by this test's id
+    const {status} = await this.http.post(`/snippets/${snippetId}/tests/run`)
+    if (status === 204) throw new Error('This snippet has no tests')
+    return poll<TestCaseResult>(async () => {
+      const {data} = await this.http.get<TestResultResponse[]>(`/snippets/${snippetId}/tests/results`)
+      const result = data.find(r => r.testId === testId)
+      if (!result || result.status === 'RUNNING') return undefined
+      if (result.status === 'ERROR') throw new Error(result.error ?? 'Test failed to run')
+      return result.status === 'OK' ? 'success' : 'fail'
+    }).catch(e => {
+      throw e.message === TIMED_OUT ? new Error('Test is taking too long') : e
+    })
   }
 }

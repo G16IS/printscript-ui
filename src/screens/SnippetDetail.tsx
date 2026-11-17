@@ -59,7 +59,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
 
   const {data: snippet, isLoading} = useGetSnippetById(id);
   const {mutate: shareSnippet, isLoading: loadingShare} = useShareSnippet()
-  const {mutate: formatSnippet, isLoading: isFormatLoading, data: formatSnippetData} = useFormatSnippet()
+  const {mutate: formatSnippet, isLoading: isFormatLoading, data: formatSnippetData, isError: isFormatError, error: formatError} = useFormatSnippet()
   const {mutate: updateSnippet, isLoading: isUpdateSnippetLoading} = useUpdateSnippetById({onSuccess: () => queryClient.invalidateQueries(['snippet', id])})
 
   useEffect(() => {
@@ -109,7 +109,12 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
               {/*</Tooltip>*/}
               {/* TODO: we can implement a live mode*/}
               <Tooltip title={"Format"}>
-                <IconButton onClick={() => formatSnippet(code)} disabled={isFormatLoading}>
+                <IconButton disabled={isFormatLoading} onClick={() => formatSnippet({snippetId: id, content: code}, {
+                  onSuccess: () => {
+                    queryClient.invalidateQueries(['snippet', id])
+                    queryClient.invalidateQueries('listSnippets')
+                  }
+                })}>
                   <ReadMoreIcon />
                 </IconButton>
               </Tooltip>
@@ -124,6 +129,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
                 </IconButton>
               </Tooltip>
             </Box>
+            {isFormatError && <Alert severity="error">{formatError?.message}</Alert>}
             <Box display={"flex"} gap={2}>
               <Bòx flex={1} height={"fit-content"} overflow={"none"} minHeight={"500px"} bgcolor={'black'} color={'white'} code={code}>
                 <Editor
