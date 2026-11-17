@@ -96,8 +96,9 @@ export class SnippetServiceOperations implements SnippetOperations {
     return toSnippet(data, data.content)
   }
 
-  deleteSnippet(): Promise<string> {
-    return notAvailable('Delete snippet')
+  async deleteSnippet(id: string): Promise<string> {
+    await this.http.delete(`/snippets/${id}`)
+    return id
   }
 
   formatSnippet(): Promise<string> {
