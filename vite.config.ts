@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: env.SNIPPET_SERVICE_URL || 'http://localhost:8080',
           changeOrigin: true,
+          ws: true,
           rewrite: (path: string) => path.replace(/^\/api/, ''),
         },
       },

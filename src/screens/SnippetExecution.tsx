@@ -1,41 +1,36 @@
-import {OutlinedInput} from "@mui/material";
-import {highlight, languages} from "prismjs";
-import Editor from "react-simple-code-editor";
+import {Alert, OutlinedInput} from "@mui/material";
 import {Bòx} from "../components/snippet-table/SnippetBox.tsx";
 import {useState} from "react";
+import {useSnippetRun} from "../hooks/useSnippetRun.ts";
 
-export const SnippetExecution = () => {
-  // Here you should provide all the logic to connect to your sockets.
+type SnippetExecutionProps = {
+  snippetId: string;
+  running: boolean;
+  onFinished: () => void;
+}
+
+export const SnippetExecution = ({snippetId, running, onFinished}: SnippetExecutionProps) => {
   const [input, setInput] = useState<string>("")
-  const [output, setOutput] = useState<string[]>([]);
-
-  //TODO: get the output from the server
-  const code = output.join("\n")
+  const {lines, pendingInput, error, sendInput} = useSnippetRun(snippetId, running, onFinished)
 
   const handleEnter = (event: { key: string }) => {
-    if (event.key === 'Enter') {
-      //TODO: logic to send inputs to server
-      setOutput([...output, input])
+    if (event.key === 'Enter' && pendingInput) {
+      sendInput(input)
       setInput("")
     }
   };
 
-    return (
-      <>
-        <Bòx flex={1} overflow={"none"} minHeight={200} bgcolor={'black'} color={'white'} code={code}>
-            <Editor
-              value={code}
-              padding={10}
-              onValueChange={(code) => setInput(code)}
-              highlight={(code) => highlight(code, languages.js, 'javascript')}
-              maxLength={1000}
-              style={{
-                  fontFamily: "monospace",
-                  fontSize: 17,
-              }}
-            />
-        </Bòx>
-        <OutlinedInput onKeyDown={handleEnter} value={input} onChange={e => setInput(e.target.value)} placeholder="Type here" fullWidth/>
-      </>
-    )
+  return (
+    <>
+      <Bòx data-testid="execution-output" flex={1} overflow={"auto"} minHeight={200} bgcolor={'black'} color={'white'}
+           code={lines.join("\n")}>
+        <pre style={{margin: 0, padding: 10, fontFamily: "monospace", fontSize: 17, whiteSpace: "pre-wrap"}}>
+          {lines.join("\n")}
+        </pre>
+      </Bòx>
+      {error && <Alert severity="error">{error}</Alert>}
+      <OutlinedInput onKeyDown={handleEnter} value={input} onChange={e => setInput(e.target.value)}
+                     placeholder="Type here" disabled={!pendingInput} inputProps={{'data-testid': 'execution-input'}} fullWidth/>
+    </>
+  )
 }
