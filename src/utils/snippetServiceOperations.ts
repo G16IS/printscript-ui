@@ -2,7 +2,7 @@ import axios, {AxiosInstance} from 'axios'
 import autoBind from 'auto-bind'
 import {SnippetOperations} from './snippetOperations'
 import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet'
-import {PaginatedUsers} from './users.ts'
+import {PaginatedUsers, User} from './users.ts'
 import {TestCase} from '../types/TestCase.ts'
 import {TestCaseResult} from './queries.tsx'
 import {FileType} from '../types/FileType.ts'
@@ -97,10 +97,11 @@ export class SnippetServiceOperations implements SnippetOperations {
     return this.getSnippetById(snippetId)
   }
 
-  getUserFriends(name: string = ''): Promise<PaginatedUsers> {
-    // shortcut: there is no users endpoint, so the typed text is offered as the target user id (Auth0 sub); replace once a users service exists
-    const users = name.trim() ? [{id: name.trim(), name: name.trim()}] : []
-    return Promise.resolve({page: 0, page_size: users.length, count: users.length, users})
+  async getUserFriends(name: string = '', page: number = 0, pageSize: number = 10): Promise<PaginatedUsers> {
+    const {data} = await this.http.get<{ page: number, pageSize: number, count: number, users: User[] }>('/users', {
+      params: {name: name.trim(), page, pageSize},
+    })
+    return {page: data.page, page_size: data.pageSize, count: data.count, users: data.users}
   }
 
   getFileTypes(): Promise<FileType[]> {
