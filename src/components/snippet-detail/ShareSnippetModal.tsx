@@ -1,8 +1,9 @@
-import {Autocomplete, Box, Button, Divider, TextField, Typography} from "@mui/material";
+import {Alert, Autocomplete, Box, Button, Divider, TextField, Typography} from "@mui/material";
 import {ModalWrapper} from "../common/ModalWrapper.tsx";
 import {useGetUsers} from "../../utils/queries.tsx";
 import {useEffect, useState} from "react";
 import {User} from "../../utils/users.ts";
+import {snippetErrorMessage} from "../../utils/snippetError.ts";
 
 type ShareSnippetModalProps = {
   open: boolean
@@ -14,8 +15,8 @@ export const ShareSnippetModal = (props: ShareSnippetModalProps) => {
   const {open, onClose, onShare, loading} = props
   const [name, setName] = useState("")
   const [debouncedName, setDebouncedName] = useState("")
-  const {data, isLoading} = useGetUsers(debouncedName, 1, 5)
-  const [selectedUser, setSelectedUser] = useState<User | undefined>()
+  const {data, isLoading, error} = useGetUsers(debouncedName, 0, 10)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
 
   useEffect(() => {
     const getData = setTimeout(() => {
@@ -24,9 +25,12 @@ export const ShareSnippetModal = (props: ShareSnippetModalProps) => {
     return () => clearTimeout(getData)
   }, [name])
 
-  function handleSelectUser(newValue: User | null) {
-    newValue && setSelectedUser(newValue)
-  }
+  useEffect(() => {
+    if (!open) {
+      setSelectedUser(null)
+      setName("")
+    }
+  }, [open])
 
   return (
       <ModalWrapper open={open} onClose={onClose}>
@@ -34,17 +38,28 @@ export const ShareSnippetModal = (props: ShareSnippetModalProps) => {
         <Divider/>
         <Box mt={2}>
           <Autocomplete
-              renderInput={(params) => <TextField {...params} label="Type the user's name"/>}
+              renderInput={(params) => <TextField {...params} label="Search users by name or email"/>}
               options={data?.users ?? []}
               isOptionEqualToValue={(option, value) =>
                   option.id === value.id
               }
               getOptionLabel={(option) => option.name}
+              filterOptions={(x) => x}
+              renderOption={(optionProps, option) => (
+                  <li {...optionProps} key={option.id}>
+                    <Box>
+                      <Typography>{option.name}</Typography>
+                      {option.email && <Typography variant={"body2"} color={"text.secondary"}>{option.email}</Typography>}
+                    </Box>
+                  </li>
+              )}
               loading={isLoading}
               value={selectedUser}
-              onInputChange={(_: unknown, newValue: string | null) => newValue && setName(newValue)}
-              onChange={(_: unknown, newValue: User | null) => handleSelectUser(newValue)}
+              inputValue={name}
+              onInputChange={(_: unknown, newValue: string) => setName(newValue)}
+              onChange={(_: unknown, newValue: User | null) => setSelectedUser(newValue)}
           />
+          {error && <Alert severity={"error"} sx={{mt: 2}}>Could not load users: {snippetErrorMessage(error)}</Alert>}
           <Box mt={4} display={"flex"} width={"100%"} justifyContent={"flex-end"}>
             <Button onClick={onClose} variant={"outlined"}>Cancel</Button>
             <Button disabled={!selectedUser || loading} onClick={() => selectedUser && onShare(selectedUser?.id)} sx={{marginLeft: 2}} variant={"contained"}>Share</Button>
