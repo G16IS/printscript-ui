@@ -59,6 +59,15 @@ docker build -t printscript-ui \
 docker run -p 3000:3000 printscript-ui
 ```
 
+## CD
+
+`.github/workflows/cd.yml` publishes `ghcr.io/g16is/printscript-ui` after CI passes:
+
+- Every push to `master` gets the next SemVer from conventional commits (`feat` → minor, `feat!`/`BREAKING CHANGE` → major, anything else → patch), tagged `X.Y.Z`, `sha-<commit>` and `dev`, plus the git tag `vX.Y.Z`.
+- Publishing a GitHub release on an existing `vX.Y.Z` tag promotes that same image to `prod` (no rebuild).
+
+The Auth0 config comes from the repo variables `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID` and `VITE_AUTH0_AUDIENCE`.
+
 ## Cypress
 
 To start cypress, make sure that the UI is running and enter: 

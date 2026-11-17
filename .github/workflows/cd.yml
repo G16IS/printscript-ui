@@ -1,0 +1,206 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [Run UI Build]
+    types: [completed]
+    branches: [main, master]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+# Esquema de tags (igual para dev y prod, todos sobre el mismo digest):
+#   sha-<commit>   inmutable, uno por commit
+#   X.Y.Z          inmutable, uno por push a main/master (también es el git tag vX.Y.Z)
+#   dev            móvil: último push a main/master
+#   prod           móvil: último release
+#
+# La config de Auth0 queda horneada en el bundle al buildear (Vite), así que dev y prod comparten la
+# misma: sale de las variables del repo (Settings → Variables) VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID
+# y VITE_AUTH0_AUDIENCE. Son públicas (terminan en el JS del navegador), por eso vars y no secrets.
+
+jobs:
+  dev:
+    # Cada push a main/master que pasó CI recibe una versión nueva y se publica en dev
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: write # para pushear el git tag vX.Y.Z
+      packages: write
+    # Concurrencia por job: un push a main nunca cancela una promoción a prod en cola
+    concurrency:
+      group: cd-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      # Próxima versión a partir del último tag v* y conventional commits:
+      # feat → minor, feat!/BREAKING CHANGE → major, cualquier otro commit → patch
+      - name: Git Semantic Version
+        id: semver
+        uses: PaulHatch/semantic-version@v6.0.2
+        with:
+          tag_prefix: "v"
+          version_format: "${major}.${minor}.${patch}"
+          major_pattern: "/^\\w+(\\(.+\\))?!:|BREAKING CHANGE/"
+          minor_pattern: "/^feat(\\(.+\\))?:/"
+          # El footer "BREAKING CHANGE:" vive en el cuerpo del commit, no en el subject
+          search_commit_body: true
+
+      - name: Resolve version
+        id: version
+        env:
+          COMPUTED: ${{ steps.semver.outputs.version }}
+        run: |
+          set -euo pipefail
+          own=$(git tag --points-at HEAD --list 'v*' --sort=-v:refname)
+          # Tags v* en commits posteriores: CI de un commit más nuevo terminó antes que este
+          newer=$(git tag --contains HEAD --list 'v*' | grep -vxF -f <(printf '%s\n' "$own") || true)
+
+          if [[ -n "$newer" ]]; then
+            echo "::notice::Un commit más nuevo ya fue versionado ($(echo "$newer" | head -n1)); este se saltea para no mover dev hacia atrás"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$own" ]]; then
+            # Re-run de un commit ya versionado: se reutiliza su versión
+            version="$(echo "$own" | head -n1)"
+            echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+            echo "new_tag=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$COMPUTED" >> "$GITHUB_OUTPUT"
+            echo "new_tag=true" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.version.outputs.skip == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - if: steps.version.outputs.skip == 'false'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        if: steps.version.outputs.skip == 'false'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=sha-${{ github.event.workflow_run.head_sha }}
+            type=raw,value=dev
+          # En workflow_run, github.sha es el HEAD de la rama default, no el commit que se buildea
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+
+      - if: steps.version.outputs.skip == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_AUTH0_DOMAIN=${{ vars.VITE_AUTH0_DOMAIN }}
+            VITE_AUTH0_CLIENT_ID=${{ vars.VITE_AUTH0_CLIENT_ID }}
+            VITE_AUTH0_AUDIENCE=${{ vars.VITE_AUTH0_AUDIENCE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # El git tag se crea recién con la imagen publicada: si existe vX.Y.Z, existe la imagen X.Y.Z.
+      # Los tags pusheados con GITHUB_TOKEN no disparan otros workflows, así que no hay loops.
+      - name: Create git tag
+        if: steps.version.outputs.skip == 'false' && steps.version.outputs.new_tag == 'true'
+        env:
+          TAG: v${{ steps.version.outputs.version }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git tag "$TAG" "$HEAD_SHA"
+          git push origin "refs/tags/$TAG"
+
+      - name: Summary
+        if: steps.version.outputs.skip == 'false'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Imagen publicada en dev"
+            echo '```'
+            echo "$TAGS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prod:
+    # Un release sobre un tag vX.Y.Z existente promueve esa misma imagen a prod; no se rebuildea nada
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: cd-prod
+      cancel-in-progress: false
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote image to prod
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="${IMAGE,,}" # los nombres en el registry van en minúscula, el de la org no
+          version="${TAG_NAME#v}"
+          source="$image:$version"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::El tag '$TAG_NAME' no es SemVer (se espera vX.Y.Z)"
+            exit 1
+          fi
+
+          # Cada push a main ya tiene su versión: el release tiene que hacerse sobre uno de esos tags
+          if ! docker buildx imagetools inspect "$source" > /dev/null 2>&1; then
+            echo "::error::No existe la imagen $source. Creá el release eligiendo un tag vX.Y.Z existente (generado por el CD de dev), no uno nuevo."
+            exit 1
+          fi
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            echo "::notice::$TAG_NAME es pre-release: prod no se mueve"
+            exit 0
+          fi
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" != "$TAG_NAME" ]]; then
+            echo "::notice::$TAG_NAME no es el último release (p. ej. un hotfix de una línea vieja): prod no se mueve"
+            exit 0
+          fi
+
+          docker buildx imagetools create --tag "$image:prod" "$source"
+
+          {
+            echo "### \`$version\` promovida a prod"
+            echo '```'
+            echo "$image:prod → $source (sha-$GITHUB_SHA)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
