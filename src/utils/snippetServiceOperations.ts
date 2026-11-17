@@ -1,7 +1,7 @@
 import axios, {AxiosInstance} from 'axios'
 import autoBind from 'auto-bind'
 import {SnippetOperations} from './snippetOperations'
-import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet} from './snippet'
+import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet'
 import {PaginatedUsers} from './users.ts'
 import {TestCase} from '../types/TestCase.ts'
 import {TestCaseResult} from './queries.tsx'
@@ -91,8 +91,9 @@ export class SnippetServiceOperations implements SnippetOperations {
     return Promise.resolve(FILE_TYPES)
   }
 
-  updateSnippetById(): Promise<Snippet> {
-    return notAvailable('Update snippet')
+  async updateSnippetById(id: string, updateSnippet: UpdateSnippet): Promise<Snippet> {
+    const {data} = await this.http.put<SnippetDetailResponse>(`/snippets/${id}`, {content: updateSnippet.content})
+    return toSnippet(data, data.content)
   }
 
   deleteSnippet(): Promise<string> {
