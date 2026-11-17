@@ -38,9 +38,6 @@ type TestCaseResponse = { id: string, name: string, inputs: string[], expectedOu
 
 const toTestCase = (t: TestCaseResponse): TestCase => ({id: t.id, name: t.name, input: t.inputs, output: t.expectedOutputs})
 
-const notAvailable = (operation: string): Promise<never> =>
-  Promise.reject(new Error(`${operation}: snippet-service does not expose this endpoint yet`))
-
 export class SnippetServiceOperations implements SnippetOperations {
   private readonly http: AxiosInstance
 
@@ -105,8 +102,9 @@ export class SnippetServiceOperations implements SnippetOperations {
     return id
   }
 
-  formatSnippet(): Promise<string> {
-    return notAvailable('Format snippet')
+  async formatSnippet(content: string): Promise<string> {
+    const {data} = await this.http.post<{ content: string }>('/snippets/format', {content})
+    return data.content
   }
 
   async getFormatRules(): Promise<Rule[]> {
