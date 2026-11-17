@@ -64,9 +64,9 @@ docker run -p 3000:3000 printscript-ui
 `.github/workflows/cd.yml` publishes `ghcr.io/g16is/printscript-ui` after CI passes:
 
 - Every push to `master` gets the next SemVer from conventional commits (`feat` → minor, `feat!`/`BREAKING CHANGE` → major, anything else → patch), tagged `X.Y.Z`, `sha-<commit>` and `dev`, plus the git tag `vX.Y.Z`.
-- Publishing a GitHub release on an existing `vX.Y.Z` tag promotes that same image to `prod` (no rebuild).
+- Publishing a GitHub release on an existing `vX.Y.Z` tag builds that same code with the prod config, tagged `X.Y.Z-prod` and `prod`.
 
-The Auth0 config comes from the repo variables `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID` and `VITE_AUTH0_AUDIENCE`.
+The Auth0 config is baked in at build time, so each environment has its own: it comes from the variables `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID` and `VITE_AUTH0_AUDIENCE` of the GitHub Environments `dev` and `prod`.
 
 ## Cypress
 

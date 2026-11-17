@@ -14,15 +14,17 @@ permissions:
 env:
   IMAGE: ghcr.io/${{ github.repository }}
 
-# Esquema de tags (igual para dev y prod, todos sobre el mismo digest):
-#   sha-<commit>   inmutable, uno por commit
-#   X.Y.Z          inmutable, uno por push a main/master (también es el git tag vX.Y.Z)
+# Esquema de tags:
+#   sha-<commit>   inmutable, uno por commit (imagen de dev)
+#   X.Y.Z          inmutable, uno por push a main/master (imagen de dev; también es el git tag vX.Y.Z)
 #   dev            móvil: último push a main/master
+#   X.Y.Z-prod     inmutable, el mismo código de X.Y.Z buildeado con la config de prod
 #   prod           móvil: último release
 #
-# La config de Auth0 queda horneada en el bundle al buildear (Vite), así que dev y prod comparten la
-# misma: sale de las variables del repo (Settings → Variables) VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID
-# y VITE_AUTH0_AUDIENCE. Son públicas (terminan en el JS del navegador), por eso vars y no secrets.
+# La config de Auth0 queda horneada en el bundle al buildear (Vite), así que cada ambiente necesita su
+# propio build: sale de las variables de cada Environment de GitHub (dev / prod) VITE_AUTH0_DOMAIN,
+# VITE_AUTH0_CLIENT_ID y VITE_AUTH0_AUDIENCE. Son públicas (terminan en el JS del navegador), por eso
+# vars y no secrets.
 
 jobs:
   dev:
@@ -156,7 +158,7 @@ jobs:
           client-payload: '{"env": "dev", "service": "printscript-ui"}'
 
   prod:
-    # Un release sobre un tag vX.Y.Z existente promueve esa misma imagen a prod; no se rebuildea nada
+    # Un release sobre un tag vX.Y.Z existente buildea ese mismo código con la config de prod
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment: prod
@@ -167,16 +169,8 @@ jobs:
       group: cd-prod
       cancel-in-progress: false
     steps:
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Promote image to prod
-        id: promote
+      - name: Check release
+        id: check
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
@@ -185,7 +179,8 @@ jobs:
           set -euo pipefail
           image="${IMAGE,,}" # los nombres en el registry van en minúscula, el de la org no
           version="${TAG_NAME#v}"
-          source="$image:$version"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::El tag '$TAG_NAME' no es SemVer (se espera vX.Y.Z)"
@@ -193,33 +188,67 @@ jobs:
           fi
 
           # Cada push a main ya tiene su versión: el release tiene que hacerse sobre uno de esos tags
-          if ! docker buildx imagetools inspect "$source" > /dev/null 2>&1; then
-            echo "::error::No existe la imagen $source. Creá el release eligiendo un tag vX.Y.Z existente (generado por el CD de dev), no uno nuevo."
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" > /dev/null 2>&1; then
+            echo "::error::No existe el tag $TAG_NAME. Creá el release eligiendo un tag vX.Y.Z existente (generado por el CD de dev), no uno nuevo."
             exit 1
           fi
 
           if [[ "$PRERELEASE" == "true" ]]; then
             echo "::notice::$TAG_NAME es pre-release: prod no se mueve"
+            echo "promote=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [[ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" != "$TAG_NAME" ]]; then
             echo "::notice::$TAG_NAME no es el último release (p. ej. un hotfix de una línea vieja): prod no se mueve"
+            echo "promote=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "promote=true" >> "$GITHUB_OUTPUT"
 
-          docker buildx imagetools create --tag "$image:prod" "$source"
-          # Los `exit 0` de arriba (pre-release, hotfix viejo) no promueven: solo acá se avisa a infra
-          echo "promoted=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.promote == 'true'
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
+      - uses: docker/setup-buildx-action@v3
+        if: steps.check.outputs.promote == 'true'
+
+      - uses: docker/login-action@v3
+        if: steps.check.outputs.promote == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (prod)
+        if: steps.check.outputs.promote == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.check.outputs.image }}:${{ steps.check.outputs.version }}-prod
+            ${{ steps.check.outputs.image }}:prod
+          # variables del Environment prod (otro client id y audience que dev)
+          build-args: |
+            VITE_AUTH0_DOMAIN=${{ vars.VITE_AUTH0_DOMAIN }}
+            VITE_AUTH0_CLIENT_ID=${{ vars.VITE_AUTH0_CLIENT_ID }}
+            VITE_AUTH0_AUDIENCE=${{ vars.VITE_AUTH0_AUDIENCE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        if: steps.check.outputs.promote == 'true'
+        run: |
           {
-            echo "### \`$version\` promovida a prod"
+            echo "### \`${{ steps.check.outputs.version }}\` publicada en prod"
             echo '```'
-            echo "$image:prod → $source (sha-$GITHUB_SHA)"
+            echo "${{ steps.check.outputs.image }}:prod → ${{ steps.check.outputs.version }}-prod (tag ${{ github.event.release.tag_name }})"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Avisar al repo de infra
-        if: steps.promote.outputs.promoted == 'true'
+        if: steps.check.outputs.promote == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.INFRA_DISPATCH_TOKEN }}
