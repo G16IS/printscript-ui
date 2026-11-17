@@ -133,13 +133,16 @@ export class SnippetServiceOperations implements SnippetOperations {
   }
 
   async postTestCase(snippetId: string, testCase: Partial<TestCase>): Promise<TestCase> {
-    // the backend has no update, so editing a saved test replaces it
-    if (testCase.id) await this.removeTestCase(snippetId, testCase.id)
     const {data} = await this.http.post<TestCaseResponse>(`/snippets/${snippetId}/tests`, {
       name: testCase.name,
       inputs: testCase.input ?? [],
       expectedOutputs: testCase.output ?? [],
     })
+    // the backend has no update: create the new test first, then drop the old one, so a failure never loses the test
+    if (testCase.id) {
+      await this.removeTestCase(snippetId, testCase.id)
+        .catch(e => console.warn(`Could not delete the replaced test ${testCase.id}, a duplicate remains`, e))
+    }
     return toTestCase(data)
   }
 
