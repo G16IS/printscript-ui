@@ -1,12 +1,12 @@
 # Printscript UI
 
-This is a React project using Vite and Node.js 20. This README will guide you on how to set up and start the project locally.
+This is a React project using Vite and Node.js 22. This README will guide you on how to set up and start the project locally.
 
 ## Prerequisites
 
 Before you begin, ensure you have met the following requirements:
 
-- You have installed Node.js 20 or later
+- You have installed Node.js 22 or later
 - You have installed npm
 
 ## Getting Started

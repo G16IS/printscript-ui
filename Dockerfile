@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN CYPRESS_INSTALL_BINARY=0 npm ci
@@ -10,7 +10,7 @@ ARG VITE_AUTH0_AUDIENCE
 ARG VITE_BACKEND_URL
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:22-alpine
 RUN npm install -g serve@14.2.4
 WORKDIR /app
 COPY --from=build /app/dist ./dist
