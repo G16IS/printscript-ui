@@ -59,7 +59,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
 
   const {data: snippet, isLoading} = useGetSnippetById(id);
   const {mutate: shareSnippet, isLoading: loadingShare} = useShareSnippet()
-  const {mutate: formatSnippet, isLoading: isFormatLoading, data: formatSnippetData, isError: isFormatError, error: formatError} = useFormatSnippet()
+  const {mutate: formatSnippet, isLoading: isFormatLoading, isError: isFormatError, error: formatError} = useFormatSnippet()
   const {mutate: updateSnippet, isLoading: isUpdateSnippetLoading} = useUpdateSnippetById({onSuccess: () => queryClient.invalidateQueries(['snippet', id])})
 
   useEffect(() => {
@@ -67,13 +67,6 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
       setCode(snippet.content);
     }
   }, [snippet]);
-
-  useEffect(() => {
-    if (formatSnippetData) {
-      setCode(formatSnippetData)
-    }
-  }, [formatSnippetData])
-
 
   async function handleShareSnippet(userId: string) {
     shareSnippet({snippetId: id, userId})
@@ -110,7 +103,8 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
               {/* TODO: we can implement a live mode*/}
               <Tooltip title={"Format"}>
                 <IconButton disabled={isFormatLoading} onClick={() => formatSnippet({snippetId: id, content: code}, {
-                  onSuccess: () => {
+                  onSuccess: (formatted) => {
+                    setCode(formatted)
                     queryClient.invalidateQueries(['snippet', id])
                     queryClient.invalidateQueries('listSnippets')
                   }
@@ -119,7 +113,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
                 </IconButton>
               </Tooltip>
               <Tooltip title={"Save changes"}>
-                <IconButton color={"primary"} onClick={() => updateSnippet({id: id, updateSnippet: {content: code}})} disabled={isUpdateSnippetLoading || snippet?.content === code} >
+                <IconButton color={"primary"} onClick={() => updateSnippet({id: id, updateSnippet: {content: code}})} disabled={isUpdateSnippetLoading || isFormatLoading || snippet?.content === code} >
                   <Save />
                 </IconButton>
               </Tooltip>
@@ -134,6 +128,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
               <Bòx flex={1} height={"fit-content"} overflow={"none"} minHeight={"500px"} bgcolor={'black'} color={'white'} code={code}>
                 <Editor
                     value={code}
+                    disabled={isFormatLoading}
                     padding={10}
                     onValueChange={(code) => setCode(code)}
                     highlight={(code) => highlight(code, languages.js, "javascript")}
