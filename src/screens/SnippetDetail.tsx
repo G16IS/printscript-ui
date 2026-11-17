@@ -20,6 +20,7 @@ import ReadMoreIcon from '@mui/icons-material/ReadMore';
 import {queryClient} from "../App.tsx";
 import {DeleteConfirmationModal} from "../components/snippet-detail/DeleteConfirmationModal.tsx";
 import {snippetErrorMessage} from "../utils/snippetError.ts";
+import {useSnackbarContext} from "../contexts/snackbarContext.tsx";
 
 type SnippetDetailProps = {
   id: string;
@@ -60,6 +61,7 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
 
   const {data: snippet, isLoading} = useGetSnippetById(id);
   const {mutate: shareSnippet, isLoading: loadingShare} = useShareSnippet()
+  const {createSnackbar} = useSnackbarContext()
   const {mutate: formatSnippet, isLoading: isFormatLoading, isError: isFormatError, error: formatError, reset: resetFormat} = useFormatSnippet()
   const {mutate: updateSnippet, isLoading: isUpdateSnippetLoading, error: saveError, reset: resetSave} = useUpdateSnippetById({
     onSuccess: () => {
@@ -75,7 +77,13 @@ export const SnippetDetail = (props: SnippetDetailProps) => {
   }, [snippet]);
 
   async function handleShareSnippet(userId: string) {
-    shareSnippet({snippetId: id, userId})
+    shareSnippet({snippetId: id, userId}, {
+      onSuccess: () => {
+        setShareModalOppened(false)
+        createSnackbar('success', `Snippet shared with ${userId}`)
+      },
+      onError: (e) => createSnackbar('error', `Could not share snippet.\n${snippetErrorMessage(e)}`),
+    })
   }
 
   return (

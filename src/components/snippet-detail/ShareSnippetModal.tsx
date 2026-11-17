@@ -20,7 +20,7 @@ export const ShareSnippetModal = (props: ShareSnippetModalProps) => {
   useEffect(() => {
     const getData = setTimeout(() => {
       setDebouncedName(name)
-    }, 3000)
+    }, 300)
     return () => clearTimeout(getData)
   }, [name])
 
