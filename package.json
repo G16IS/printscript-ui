@@ -12,7 +12,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "cypress": "cypress open",
-    "e2e:dev": "FRONTEND_URL=https://dev-g16-snippet.duckdns.org cypress run --spec 'cypress/e2e/{protectedRoutes,snippetCrud,snippetFileAndFormat}.cy.ts'"
+    "e2e:dev": "FRONTEND_URL=https://dev-g16-snippet.duckdns.org cypress run --spec 'cypress/e2e/{protectedRoutes,snippetCrud,snippetFileAndFormat,snippetShare}.cy.ts'"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.2.4",

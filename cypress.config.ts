@@ -15,6 +15,9 @@ export default defineConfig({
     env: {
       AUTH0_USERNAME: process.env.AUTH0_USERNAME,
       AUTH0_PASSWORD: process.env.AUTH0_PASSWORD,
+      // second user, to test sharing
+      AUTH0_USERNAME_2: process.env.AUTH0_USERNAME_2,
+      AUTH0_PASSWORD_2: process.env.AUTH0_PASSWORD_2,
     },
   },
 });
