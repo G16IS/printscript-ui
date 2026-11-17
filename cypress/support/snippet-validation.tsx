@@ -3,6 +3,7 @@ import {useContext, useState} from 'react'
 import {createRoot} from 'react-dom/client'
 import {QueryClientProvider} from 'react-query'
 import {queryClient} from '../../src/App'
+import {SnackbarProvider} from '../../src/contexts/snackbarProvider'
 import {AddSnippetModal} from '../../src/components/snippet-table/AddSnippetModal'
 import {SnippetDetail} from '../../src/screens/SnippetDetail'
 
@@ -14,12 +15,14 @@ const ValidationTest = () => {
   return (
     <Auth0Context.Provider value={{...auth, isAuthenticated: true, isLoading: false, getAccessTokenSilently}}>
       <QueryClientProvider client={queryClient}>
-        {new URLSearchParams(location.search).get('mode') === 'edit'
-          ? <SnippetDetail id="snippet-1" handleCloseModal={() => setOpen(false)}/>
-          : <>
-            <button onClick={() => setOpen(true)}>Reopen</button>
-            <AddSnippetModal open={open} onClose={() => setOpen(false)}/>
-          </>}
+        <SnackbarProvider>
+          {new URLSearchParams(location.search).get('mode') === 'edit'
+            ? <SnippetDetail id="snippet-1" handleCloseModal={() => setOpen(false)}/>
+            : <>
+              <button onClick={() => setOpen(true)}>Reopen</button>
+              <AddSnippetModal open={open} onClose={() => setOpen(false)}/>
+            </>}
+        </SnackbarProvider>
       </QueryClientProvider>
     </Auth0Context.Provider>
   )

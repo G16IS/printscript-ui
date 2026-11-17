@@ -17,7 +17,10 @@ const unavailable = {
   body: {title: 'Snippet validation unavailable', detail: 'Could not validate the snippet; please try again later'},
 }
 
-describe('Snippet validation errors', () => {
+// the fixture page is served only by the local Vite dev server, a deployed build redirects it to Auth0
+const servesFixtures = Cypress.config('baseUrl')?.startsWith('http://localhost')
+
+;(servesFixtures ? describe : describe.skip)('Snippet validation errors', () => {
   beforeEach(() => {
     cy.intercept('GET', '**/snippets/snippet-1', snippet).as('snippet')
     cy.intercept('GET', '**/snippets/snippet-1/tests', []).as('tests')
