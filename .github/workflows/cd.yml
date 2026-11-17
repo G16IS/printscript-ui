@@ -145,6 +145,16 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Con la imagen ya publicada, avisa al repo de infra para que la despliegue en la VM
+      - name: Avisar al repo de infra
+        if: steps.version.outputs.skip == 'false'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.INFRA_DISPATCH_TOKEN }}
+          repository: G16IS/snippet-searcher-infra
+          event-type: image-published
+          client-payload: '{"env": "dev", "service": "printscript-ui"}'
+
   prod:
     # Un release sobre un tag vX.Y.Z existente promueve esa misma imagen a prod; no se rebuildea nada
     if: github.event_name == 'release'
@@ -166,6 +176,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Promote image to prod
+        id: promote
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
@@ -197,6 +208,8 @@ jobs:
           fi
 
           docker buildx imagetools create --tag "$image:prod" "$source"
+          # Los `exit 0` de arriba (pre-release, hotfix viejo) no promueven: solo acá se avisa a infra
+          echo "promoted=true" >> "$GITHUB_OUTPUT"
 
           {
             echo "### \`$version\` promovida a prod"
@@ -204,3 +217,12 @@ jobs:
             echo "$image:prod → $source (sha-$GITHUB_SHA)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Avisar al repo de infra
+        if: steps.promote.outputs.promoted == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.INFRA_DISPATCH_TOKEN }}
+          repository: G16IS/snippet-searcher-infra
+          event-type: image-published
+          client-payload: '{"env": "prod", "service": "printscript-ui"}'
