@@ -67,7 +67,8 @@ export class SnippetServiceOperations implements SnippetOperations {
 
   async listSnippetDescriptors(page: number, pageSize: number, snippetName?: string): Promise<PaginatedSnippets> {
     // the backend rejects a blank name, so it is only sent when there is one
-    const params = {page, size: pageSize, ...(snippetName?.trim() ? {name: snippetName.trim()} : {})}
+    // without relation the backend lists only the caller's own snippets, not the shared ones
+    const params = {relation: 'BOTH', page, size: pageSize, ...(snippetName?.trim() ? {name: snippetName.trim()} : {})}
     const {data} = await this.http.get<SnippetListResponse>('/snippets', {params})
     return {
       page: data.page,
