@@ -34,6 +34,10 @@ const toSnippet = (s: { id: string, name: string, language: string, lintStatus: 
   compliance: COMPLIANCE[s.lintStatus] ?? 'pending',
 })
 
+type TestCaseResponse = { id: string, name: string, inputs: string[], expectedOutputs: string[] }
+
+const toTestCase = (t: TestCaseResponse): TestCase => ({id: t.id, name: t.name, input: t.inputs, output: t.expectedOutputs})
+
 const notAvailable = (operation: string): Promise<never> =>
   Promise.reject(new Error(`${operation}: snippet-service does not expose this endpoint yet`))
 
@@ -121,19 +125,30 @@ export class SnippetServiceOperations implements SnippetOperations {
     return notAvailable('Modify linting rules')
   }
 
-  getTestCases(): Promise<TestCase[]> {
-    return notAvailable('Test cases')
+  async getTestCases(snippetId: string): Promise<TestCase[]> {
+    const {data} = await this.http.get<TestCaseResponse[]>(`/snippets/${snippetId}/tests`)
+    return data.map(toTestCase)
   }
 
-  postTestCase(): Promise<TestCase> {
-    return notAvailable('Create test case')
+  async postTestCase(snippetId: string, testCase: Partial<TestCase>): Promise<TestCase> {
+    // the backend has no update, so editing a saved test replaces it
+    if (testCase.id) await this.removeTestCase(snippetId, testCase.id)
+    const {data} = await this.http.post<TestCaseResponse>(`/snippets/${snippetId}/tests`, {
+      name: testCase.name,
+      inputs: testCase.input ?? [],
+      expectedOutputs: testCase.output ?? [],
+    })
+    return toTestCase(data)
   }
 
-  removeTestCase(): Promise<string> {
-    return notAvailable('Remove test case')
+  async removeTestCase(snippetId: string, testId: string): Promise<string> {
+    await this.http.delete(`/snippets/${snippetId}/tests/${testId}`)
+    return testId
   }
 
-  testSnippet(): Promise<TestCaseResult> {
-    return notAvailable('Run test case')
+  async testSnippet(snippetId: string, testCase: Partial<TestCase>): Promise<TestCaseResult> {
+    if (!testCase.id) throw new Error('Save the test before running it')
+    const {data} = await this.http.post<{ result: TestCaseResult }>(`/snippets/${snippetId}/tests/${testCase.id}/run`)
+    return data.result
   }
 }
